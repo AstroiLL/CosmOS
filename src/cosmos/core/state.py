@@ -61,11 +61,20 @@ class TaskStore:
         self._add_event(task_id, "task.created", {"description": description, "agent": agent})
         return task_id
 
+    def _parse_metadata(self, row: dict) -> dict:
+        """Parse metadata field from JSON string to dict."""
+        if isinstance(row.get("metadata"), str):
+            try:
+                row["metadata"] = json.loads(row["metadata"])
+            except (json.JSONDecodeError, TypeError):
+                row["metadata"] = {}
+        return row
+
     def get_task(self, task_id: str) -> Optional[dict]:
         row = self._conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         if row is None:
             return None
-        return dict(row)
+        return self._parse_metadata(dict(row))
 
     def list_tasks(self, limit: int = 20, status: Optional[str] = None) -> list[dict]:
         if status:
@@ -78,10 +87,11 @@ class TaskStore:
                 "SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?",
                 (limit,),
             ).fetchall()
-        return [dict(r) for r in rows]
+        return [self._parse_metadata(dict(r)) for r in rows]
 
     def update_task(self, task_id: str, status: Optional[str] = None,
-                    result: Optional[str] = None, error: Optional[str] = None):
+                    result: Optional[str] = None, error: Optional[str] = None,
+                    metadata: Optional[dict] = None):
         now = datetime.now(timezone.utc).isoformat()
         updates = []
         params = []
@@ -100,6 +110,9 @@ class TaskStore:
         if error is not None:
             updates.append("error = ?")
             params.append(error)
+        if metadata is not None:
+            updates.append("metadata = ?")
+            params.append(json.dumps(metadata))
         if not updates:
             return
         params.append(task_id)

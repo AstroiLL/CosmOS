@@ -14,6 +14,17 @@ class AgentConfig(BaseModel):
     model: Optional[str] = None  # Agent-specific model override (e.g. opencode)
 
 
+class RemoteHostConfig(BaseModel):
+    """SSH host config for remote agent execution."""
+    host: str
+    user: str
+    port: int = 22
+    key: str = "~/.ssh/id_ed25519"
+    workdir: str = "~/CosmOS/tasks"
+    timeout_sec: int = 3600
+    agents: list[str] = []  # which agent CLIs are available on this host
+
+
 class MemorySQLiteConfig(BaseModel):
     enabled: bool = True
     path: str = "data/cosmos.sqlite"
@@ -52,6 +63,7 @@ class CosmOSConfig(BaseModel):
         "hermes": AgentConfig(command="hermes"),
     })
     default_agent: str = "hermes"
+    remote_hosts: dict[str, RemoteHostConfig] = Field(default_factory=dict)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
@@ -65,9 +77,12 @@ class CosmOSConfig(BaseModel):
         raw = yaml.safe_load(path.read_text())
         # Merge top-level + nested project block
         data = dict(raw.get("project", {}))
-        for key in ("agents", "memory", "execution", "logging"):
+        for key in ("agents", "remote_hosts", "memory", "execution", "logging"):
             if key in raw:
-                data[key] = raw[key]
+                value = raw[key]
+                # YAML returns None for empty comment-only blocks
+                if value is not None:
+                    data[key] = value
         if "default" in data.get("agents", {}):
             data["default_agent"] = data["agents"].pop("default")
         return cls(**data)

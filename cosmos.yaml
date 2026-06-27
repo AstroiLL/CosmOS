@@ -6,6 +6,18 @@ project:
   version: 0.1.0
   root: ~/Sync/GPT/CosmOS
 
+# Удалённые хосты (SSH-агенты)
+remote_hosts:
+  # Пример:
+  # devbox:
+  #   host: 192.168.1.100
+  #   user: astroill
+  #   port: 22
+  #   key: ~/.ssh/id_ed25519
+  #   workdir: ~/CosmOS/tasks
+  #   timeout_sec: 3600
+  #   agents: [claude, opencode]  # какие CLI доступны на хосте
+
 # Подключённые агенты
 agents:
   default: hermes

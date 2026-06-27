@@ -1,7 +1,12 @@
-"""CosmOS CLI — commands for task, status, doctor."""
+"""CosmOS CLI — commands for task, status, doctor, agents, remote.
 
+Supports local and remote (SSH) agent execution.
+"""
+
+import json
 import shutil
 from pathlib import Path
+from typing import Optional
 
 import typer
 from rich.console import Console
@@ -13,6 +18,7 @@ from .config import CosmOSConfig
 from .core.state import TaskStore
 from .core.router import TaskRouter
 from .agents.base import Capability
+from .agents.remote_agent import RemoteAgent
 
 # Global state (initialised lazily)
 _cfg: CosmOSConfig | None = None
@@ -64,21 +70,43 @@ def _get_router() -> TaskRouter:
 @app.command()
 def task(
     description: str = typer.Argument(..., help="Описание задачи"),
-    agent: str = typer.Option(None, "--agent", "-a", help="Агент (hermes, opencode...)"),
+    agent: str = typer.Option(None, "--agent", "-a", help="Агент (hermes, claude, opencode...)"),
+    host: str = typer.Option(None, "--host", "-h", help="Удалённый хост (из cosmos.yaml remote_hosts)"),
 ):
-    """Создать и выполнить задачу через агента."""
+    """Создать и выполнить задачу через агента.
+
+    Укажите --host для выполнения на удалённом сервере через SSH.
+    Удалённые задачи запускаются в фоне, коннект не удерживается.
+    """
+    router = _get_router()
+
     with console.status("[bold green]Выполняю задачу...") as _s:
-        router = _get_router()
-        result = router.run_task(description, agent_name=agent)
+        result = router.run_task(description, agent_name=agent, host=host)
+
+    is_remote = (result.get("metadata") or {}).get("remote", False)
     status_icon = "✅" if result["status"] == "completed" else "❌"
-    console.print(f"\n{status_icon} [bold]Задача:[/] {description}")
+    remote_icon = "🖥️ " if is_remote else ""
+
+    console.print(f"\n{status_icon} {remote_icon}[bold]Задача:[/] {description}")
     console.print(f"   ID:     {result['id']}")
     console.print(f"   Агент:  {result['agent']}")
     console.print(f"   Статус: {result['status']}")
-    console.print(f"   Время:  {result.get('duration_sec', '?')}с")
+
+    if is_remote:
+        meta = result.get("metadata", {})
+        console.print(f"   Хост:   {meta.get('remote_host', '?')} ({meta.get('remote_host_address', '?')})")
+        console.print(f"   Remote ID: {meta.get('remote_task_id', '?')}")
+        if result["status"] == "running":
+            console.print("[yellow]   ⏳ Задача выполняется на удалённом сервере.[/]")
+            console.print("   Используйте [bold]cosmos status --poll[/bold] для обновления.")
+
+    if result.get("duration_sec"):
+        console.print(f"   Время:  {result['duration_sec']}с")
+
     if result.get("verified") is not None:
         v = "✅" if result["verified"] else "⚠️"
         console.print(f"   Вериф.: {v}")
+
     if result["status"] == "completed" and result["result"]:
         console.print(Panel(
             result["result"][:2000],
@@ -93,8 +121,12 @@ def task(
 def status(
     limit: int = typer.Option(10, "--limit", "-l", help="Сколько задач показать"),
     filter_status: str = typer.Option(None, "--status", "-s", help="Фильтр по статусу"),
+    poll: bool = typer.Option(False, "--poll", "-p", help="Проверить статус удалённых задач"),
 ):
-    """Показать статус задач."""
+    """Показать статус задач.
+
+    Используйте --poll, чтобы проверить завершение удалённых задач.
+    """
     store = _get_store()
     tasks = store.list_tasks(limit=limit, status=filter_status)
 
@@ -102,11 +134,22 @@ def status(
         console.print("[yellow]Нет задач[/]")
         raise typer.Exit(0)
 
+    # Poll remote tasks if requested
+    if poll:
+        router = _get_router()
+        for t in tasks:
+            if t["status"] == "running" and (t.get("metadata") or {}).get("remote"):
+                with console.status(f"[dim]Опрашиваю {t['id']}...") as _s:
+                    updated = router.poll_remote_task(t["id"])
+                if updated:
+                    t.update(updated)
+
     table = Table(box=box.ROUNDED)
     table.add_column("ID", style="cyan", no_wrap=True)
     table.add_column("Описание", style="white")
     table.add_column("Агент", style="blue")
     table.add_column("Статус")
+    table.add_column("Хост", style="dim")
     table.add_column("Создана", style="dim")
 
     for t in tasks:
@@ -117,13 +160,19 @@ def status(
             "failed": "red",
             "cancelled": "dim",
         }.get(t["status"], "white")
-        desc = t["description"][:60] + ("..." if len(t["description"]) > 60 else "")
+        desc = t["description"][:50] + ("..." if len(t["description"]) > 50 else "")
         created = t["created_at"][:19].replace("T", " ")
+        meta = t.get("metadata") or {}
+        host_display = meta.get("remote_host", "")
+        agent_display = t.get("agent", "")
+        host_str = f"🖥 {host_display}" if host_display else ""
+
         table.add_row(
             t["id"],
             desc,
-            t["agent"],
+            agent_display,
             f"[{status_style}]{t['status']}[/]",
+            host_str,
             created,
         )
     console.print(table)
@@ -151,7 +200,7 @@ def agents():
 
 @app.command()
 def doctor():
-    """Проверка окружения CosmOS."""
+    """Проверка окружения CosmOS (включая удалённые хосты)."""
     console.print("[bold]CosmOS Health Check[/bold]\n")
 
     checks = []
@@ -165,6 +214,21 @@ def doctor():
     try:
         cfg = _get_config()
         checks.append(("cosmos.yaml", True, f"{cfg.name} v{cfg.version}"))
+
+        # Remote hosts
+        if cfg.remote_hosts:
+            for host_name, host_cfg in cfg.remote_hosts.items():
+                from .agents.ssh_runner import SSHRunner
+                runner = SSHRunner(host_name, host_cfg)
+                available = runner.check_available()
+                status = "✅ reachable" if available else "❌ unreachable"
+                checks.append((
+                    f"  Remote: {host_name}",
+                    available,
+                    f"{host_cfg.user}@{host_cfg.host}:{host_cfg.port} — {status}",
+                ))
+        else:
+            checks.append(("Remote hosts", True, "none configured"))
     except FileNotFoundError:
         checks.append(("cosmos.yaml", False, "not found"))
     except Exception as e:
@@ -184,7 +248,7 @@ def doctor():
         router = _get_router()
         for info in router.list_agents():
             if info.name == "shell":
-                continue  # always available
+                continue
             status = "✅ available" if info.available else "❌ not installed"
             caps = ", ".join(c.value for c in info.capabilities)
             checks.append((f"Agent: {info.name}", info.available,
@@ -206,6 +270,104 @@ def doctor():
     total = len(checks)
     passed = sum(1 for _, ok, _ in checks if ok)
     console.print(f"\n[bold]{'✅ Все проверки пройдены' if passed == total else '⚠️ ' + str(passed) + '/' + str(total) + ' пройдено'}[/]")
+
+
+# ── Remote subcommands ───────────────────────────────
+
+
+@app.command()
+def remote(
+    action: str = typer.Argument(..., help="Действие: list, poll, cancel"),
+    task_id: str = typer.Option(None, "--task", "-t", help="ID задачи для poll/cancel"),
+):
+    """Управление удалёнными задачами.
+
+    \b
+    Примеры:
+      cosmos remote list              — список всех удалённых задач
+      cosmos remote poll --task <id>  — проверить статус удалённой задачи
+      cosmos remote cancel --task <id> — отменить удалённую задачу
+    """
+    router = _get_router()
+
+    if action == "list":
+        store = _get_store()
+        tasks = store.list_tasks(limit=50)
+        remote_tasks = [t for t in tasks if (t.get("metadata") or {}).get("remote")]
+
+        if not remote_tasks:
+            console.print("[yellow]Нет удалённых задач[/]")
+            raise typer.Exit(0)
+
+        table = Table(box=box.ROUNDED)
+        table.add_column("ID", style="cyan")
+        table.add_column("Описание")
+        table.add_column("Хост")
+        table.add_column("Remote ID")
+        table.add_column("Статус")
+        for t in remote_tasks:
+            meta = t.get("metadata") or {}
+            table.add_row(
+                t["id"],
+                t["description"][:40] + "...",
+                meta.get("remote_host", "?"),
+                meta.get("remote_task_id", "?")[:12],
+                t["status"],
+            )
+        console.print(table)
+
+    elif action == "poll":
+        if not task_id:
+            console.print("[red]Укажите --task <id>[/]")
+            raise typer.Exit(1)
+        with console.status(f"[dim]Опрашиваю задачу {task_id}...") as _s:
+            updated = router.poll_remote_task(task_id)
+        if updated:
+            status_icon = "✅" if updated["status"] == "completed" else "❌"
+            console.print(f"\n{status_icon} [bold]Задача {task_id}[/]")
+            console.print(f"   Статус: {updated['status']}")
+            if updated["result"]:
+                console.print(Panel(
+                    updated["result"][:2000],
+                    title="Результат",
+                    border_style="green",
+                ))
+            if updated.get("error"):
+                console.print(f"[red]Ошибка:[/] {updated['error'][:500]}")
+
+    elif action == "cancel":
+        if not task_id:
+            console.print("[red]Укажите --task <id>[/]")
+            raise typer.Exit(1)
+
+        store = _get_store()
+        task = store.get_task(task_id)
+        if not task:
+            console.print(f"[red]Задача {task_id} не найдена[/]")
+            raise typer.Exit(1)
+
+        meta = task.get("metadata") or {}
+        host_name = meta.get("remote_host")
+        remote_task_id = meta.get("remote_task_id")
+        if not host_name or not remote_task_id:
+            console.print("[red]Задача не является удалённой[/]")
+            raise typer.Exit(1)
+
+        # Find the remote agent
+        for name, agent in router.remote_agents.items():
+            if agent.host_name == host_name:
+                err = agent.cancel_task(remote_task_id)
+                if err:
+                    console.print(f"[red]Ошибка отмены:[/] {err}")
+                else:
+                    store.update_task(task_id, status="cancelled")
+                    console.print(f"[green]Задача {task_id} отменена на {host_name}[/]")
+                raise typer.Exit(0)
+
+        console.print(f"[red]Агент для хоста {host_name} не найден[/]")
+
+    else:
+        console.print(f"[red]Неизвестное действие: {action}. Допустимо: list, poll, cancel[/]")
 
 
 def main():
