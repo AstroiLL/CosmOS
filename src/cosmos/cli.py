@@ -282,8 +282,8 @@ def doctor():
 
 @app.command()
 def remote(
-    action: str = typer.Argument(..., help="Действие: list, poll, cancel"),
-    task_id: str = typer.Option(None, "--task", "-t", help="ID задачи для poll/cancel"),
+    action: str = typer.Argument(..., help="Действие: list, poll, cancel, clean"),
+    task_id: str = typer.Option(None, "--task", "-t", help="ID задачи для poll/cancel/clean"),
 ):
     """Управление удалёнными задачами.
 
@@ -292,6 +292,12 @@ def remote(
       cosmos remote list              — список всех удалённых задач
       cosmos remote poll --task <id>  — проверить статус удалённой задачи
       cosmos remote cancel --task <id> — отменить удалённую задачу
+      cosmos remote clean --task <id> — удалить папку задачи на хосте
+
+    \b
+    Папка задачи НЕ удаляется автоматически при отмене или завершении.
+    Используйте `remote clean` чтобы вручную очистить папку на хосте.
+    Нельзя очистить папку незавершённой задачи (running/pending).
     """
     router = _get_router()
 
@@ -371,8 +377,44 @@ def remote(
 
         console.print(f"[red]Агент для хоста {host_name} не найден[/]")
 
+    elif action == "clean":
+        if not task_id:
+            console.print("[red]Укажите --task <id>[/]")
+            raise typer.Exit(1)
+
+        store = _get_store()
+        task = store.get_task(task_id)
+        if not task:
+            console.print(f"[red]Задача {task_id} не найдена[/]")
+            raise typer.Exit(1)
+
+        # Нельзя очистить незавершённую задачу
+        if task["status"] in ("running", "pending"):
+            console.print(f"[red]Задача {task_id} ещё не завершена (статус: {task['status']}).[/]")
+            console.print("  Дождитесь завершения или отмените задачу сначала.")
+            raise typer.Exit(1)
+
+        meta = task.get("metadata") or {}
+        host_name = meta.get("remote_host")
+        remote_task_id = meta.get("remote_task_id")
+        if not host_name or not remote_task_id:
+            console.print("[red]Задача не является удалённой[/]")
+            raise typer.Exit(1)
+
+        # Find the remote agent
+        for name, agent in router.remote_agents.items():
+            if agent.host_name == host_name:
+                err = agent.cleanup_task(remote_task_id)
+                if err:
+                    console.print(f"[red]Ошибка очистки:[/] {err}")
+                else:
+                    console.print(f"[green]Папка задачи {task_id} удалена на {host_name}[/]")
+                raise typer.Exit(0)
+
+        console.print(f"[red]Агент для хоста {host_name} не найден[/]")
+
     else:
-        console.print(f"[red]Неизвестное действие: {action}. Допустимо: list, poll, cancel[/]")
+        console.print(f"[red]Неизвестное действие: {action}. Допустимо: list, poll, cancel, clean[/]")
 
 
 def main():

@@ -177,3 +177,10 @@ class RemoteAgent(BaseAgent):
     def cancel_task(self, remote_task_id: str) -> Optional[str]:
         """Cancel a running task on the remote host."""
         return self.runner.cancel(remote_task_id)
+
+    def cleanup_task(self, remote_task_id: str) -> Optional[str]:
+        """Remove task directory from remote host.
+
+        Returns error message or None on success.
+        """
+        return self.runner.cleanup(remote_task_id)
