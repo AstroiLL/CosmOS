@@ -15,3 +15,4 @@ data/tasks/*
 .env
 *.secret
 client_secret_*.json
+.last-sync
