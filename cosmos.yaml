@@ -13,8 +13,6 @@ remote_hosts:
     user: astroill
     port: 22
     key: ~/.ssh/id_rsa
-    workdir: ~/CosmOS/tasks
-    timeout_sec: 3600
     agents: [opencode]
     shell_env:
       PATH: /home/astroill/.opencode/bin:$PATH
@@ -23,8 +21,6 @@ remote_hosts:
     user: n8n
     port: 22
     key: ~/.ssh/ilyash
-    workdir: ~/CosmOS/tasks
-    timeout_sec: 3600
     agents: [opencode]
     shell_env:
       PATH: /home/n8n/.opencode/bin:$PATH
@@ -33,8 +29,6 @@ remote_hosts:
     user: agent
     port: 22
     key: ~/.ssh/relaxagent
-    workdir: ~/CosmOS/tasks
-    timeout_sec: 3600
     agents: [opencode]
 
 # Подключённые агенты

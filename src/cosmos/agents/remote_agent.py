@@ -2,6 +2,11 @@
 
 Submits tasks in background (nohup), closes SSH, returns immediately.
 Result can be retrieved later via poll_status().
+
+Task working directory:
+  - If `path` is provided → the agent runs in that directory
+  - If not → auto-created ~/.cosmos/<task_id>/
+Tracking files (pid, stdout, stderr, exit_status) always go to ~/.cosmos/tasks/<task_id>/
 """
 
 import time
@@ -25,6 +30,7 @@ class RemoteAgent(BaseAgent):
         host_config: RemoteHostConfig,
         agent_command: str = "hermes",
         capabilities: Optional[set[Capability]] = None,
+        model: Optional[str] = None,
     ):
         super().__init__(
             name=name,
@@ -35,33 +41,36 @@ class RemoteAgent(BaseAgent):
         self.host_name = host_name
         self.host_config = host_config
         self.agent_command = agent_command
+        self.model = model
         self.runner = SSHRunner(host_name, host_config)
 
-    def _build_agent_cmd(self, query: str, workdir: Optional[str] = None) -> str:
-        """Build the actual agent CLI command to run on the remote host."""
-        cmd_parts = [self.agent_command]
+    def _build_agent_cmd(self, query: str) -> str:
+        """Build the actual agent CLI command to run on the remote host.
 
-        # For claude, use -p for prompt
+        NOTE: Does NOT shell-escape the query — that is handled by
+        shlex.quote() in SSHRunner.submit(). This method only builds
+        the command structure.
+        """
+        # Build agent-specific command syntax
         if self.agent_command == "claude":
-            escaped = query.replace("'", "'\\''")
-            cmd_parts.extend(["-p", f"'{escaped}'"])
+            agent_cmd = f"claude -p {query}"
+        elif self.agent_command == "opencode":
+            model_flag = f" --model {self.model}" if self.model else ""
+            agent_cmd = f"opencode run{model_flag} {query}"
         else:
-            escaped = query.replace("'", "'\\''")
-            cmd_parts.append(f"'{escaped}'")
-
-        agent_cmd = " ".join(cmd_parts)
+            # Default: hermes, codex, shell — pass query as positional arg
+            agent_cmd = f"{self.agent_command} {query}"
 
         # Prepend environment if configured
-        env_exports = ""
         if self.host_config.shell_env:
             exports = []
             for key, val in self.host_config.shell_env.items():
-                exports.append(f"export {key}='{val}'")
+                # Use double quotes so variables like $PATH get expanded
+                exports.append(f"export {key}=\"{val}\"")
             env_exports = " && ".join(exports) + " && "
+            return f"{env_exports}{agent_cmd}"
 
-        if workdir:
-            return f"cd {workdir} && {env_exports}{agent_cmd}"
-        return f"{env_exports}{agent_cmd}"
+        return agent_cmd
 
     def check_available(self) -> bool:
         """Check if the remote host is reachable via SSH."""
@@ -72,13 +81,20 @@ class RemoteAgent(BaseAgent):
 
         The task continues running on the remote host after this returns.
         Use poll_status() to check completion later.
+
+        Args:
+            query: The task description / prompt for the agent.
+            workdir: Used as `path` — the working directory for the agent
+                     on the remote host. If None, ~/.cosmos/<task_id>/ is
+                     auto-created.
         """
         import uuid
         task_id = str(uuid.uuid4())[:12]
-        agent_cmd = self._build_agent_cmd(query, workdir)
+        agent_cmd = self._build_agent_cmd(query)
+        run_dir = workdir  # workdir from BaseAgent signature = run path
 
         start = time.time()
-        err = self.runner.submit(task_id, agent_cmd)
+        err = self.runner.submit(task_id, agent_cmd, run_dir=run_dir)
         submit_duration = time.time() - start
 
         if err:
@@ -100,10 +116,20 @@ class RemoteAgent(BaseAgent):
                 duration_sec=time.time() - start,
             )
 
+        # Resolve the effective run path using the same logic as submit()
+        if run_dir:
+            effective_run = run_dir
+        else:
+            import subprocess as _sp
+            home_result = self.runner._run_ssh("echo $HOME", timeout=5)
+            remote_home = home_result.stdout.strip() or f"/home/{self.host_config.user}"
+            effective_run = f"{remote_home}/.cosmos/{task_id}"
+
         return AgentResult(
             success=True,
             output=f"Task submitted to {self.host_name} ({self.host_config.host}). "
-                   f"Remote task ID: {task_id}. Use 'cosmos status' to check result.",
+                   f"Remote task ID: {task_id}. "
+                   f"Run path: {effective_run}.",
             duration_sec=submit_duration,
             artifacts={
                 "remote": True,
@@ -111,6 +137,7 @@ class RemoteAgent(BaseAgent):
                 "host_address": self.host_config.host,
                 "remote_task_id": task_id,
                 "agent_cmd": self.agent_command,
+                "run_path": effective_run,
                 "running": status.running,
             },
         )

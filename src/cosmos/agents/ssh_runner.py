@@ -43,6 +43,17 @@ class SSHRunner:
     def __init__(self, host_name: str, config: RemoteHostConfig):
         self.host_name = host_name
         self.config = config
+        self._remote_home: str | None = None
+
+    def _get_remote_home(self) -> str:
+        """Get the home directory of the remote user (cached)."""
+        if self._remote_home is None:
+            result = self._run_ssh("echo $HOME", timeout=10)
+            home = result.stdout.strip()
+            if not home:
+                home = f"/home/{self.config.user}"
+            self._remote_home = home
+        return self._remote_home
 
     # ── SSH helpers ──────────────────────────────────────
 
@@ -70,15 +81,27 @@ class SSHRunner:
             timeout=timeout,
         )
 
+    def _tasks_dir(self) -> str:
+        """Base directory for task tracking files on the remote host (absolute path)."""
+        return f"{self._get_remote_home()}/.cosmos/tasks"
+
     def _remote_path(self, *parts: str) -> str:
-        """Build an absolute remote path under workdir."""
-        base = self.config.workdir.rstrip("/")
+        """Build an absolute remote path under the tasks directory."""
+        base = self._tasks_dir()
         return f"{base}/{'/'.join(parts)}"
 
     def _write_remote_file(self, path: str, content: str) -> subprocess.CompletedProcess:
-        """Write content to a remote file via SSH + heredoc."""
-        escaped = content.replace("'", "'\\''")
-        remote_cmd = f"mkdir -p {shlex.quote(str(Path(path).parent))} && cat > {shlex.quote(path)} << 'ENDOFFILE'\n{escaped}\nENDOFFILE"
+        """Write content to a remote file via SSH + heredoc.
+
+        Uses quoted heredoc ('ENDOFFILE') so content is taken literally —
+        no shell escaping needed.
+        """
+        remote_cmd = (
+            f"mkdir -p {shlex.quote(str(Path(path).parent))}"
+            f" && cat > {shlex.quote(path)} << 'ENDOFFILE'\n"
+            f"{content}\n"
+            f"ENDOFFILE"
+        )
         return self._run_ssh(remote_cmd)
 
     def _read_remote_file(self, path: str) -> Optional[str]:
@@ -98,27 +121,54 @@ class SSHRunner:
         except (subprocess.TimeoutExpired, OSError):
             return False
 
-    def submit(self, task_id: str, agent_cmd: str) -> Optional[str]:
+    def submit(self, task_id: str, agent_cmd: str,
+               run_dir: Optional[str] = None) -> Optional[str]:
         """Submit a task to run in background on the remote host.
+
+        Writes a wrapper script to the remote host, then executes it
+        via nohup. This avoids shell quoting issues with env vars and
+        complex agent commands.
+
+        Args:
+            task_id: Unique task identifier.
+            agent_cmd: Command to run (may include cd/env wrappers).
+            run_dir: Working directory for the agent on the remote host.
+                     If None, defaults to $HOME/.cosmos/<task_id>/.
 
         Returns an error message if submission failed, None on success.
         """
         task_dir = self._remote_path(task_id)
         started_at = datetime.now(timezone.utc).isoformat()
+        effective_run = run_dir or f"{self._get_remote_home()}/.cosmos/{task_id}"
 
-        # Build the wrapper script that captures output and exit code
-        # We run it via nohup so it survives SSH disconnect
-        wrapper = (
-            f"mkdir -p {shlex.quote(task_dir)}\n"
-            f"echo '{started_at}' > {shlex.quote(task_dir)}/started_at\n"
-            f"echo {shlex.quote(agent_cmd)} > {shlex.quote(task_dir)}/agent_cmd\n"
-            f"echo $$ > {shlex.quote(task_dir)}/pid\n"
-            f"( {agent_cmd} ) > {shlex.quote(task_dir)}/stdout 2> {shlex.quote(task_dir)}/stderr\n"
-            f"echo $? > {shlex.quote(task_dir)}/exit_status\n"
+        # Write a wrapper script on the remote host
+        wrapper_script = (
+            "#!/bin/sh\n"
+            f"TASK_DIR={task_dir}\n"
+            f"RUN_DIR={effective_run}\n"
+            f"AGENT_CMD={agent_cmd}\n"
+            "\n"
+            f"mkdir -p \"$TASK_DIR\"\n"
+            f"echo '{started_at}' > \"$TASK_DIR/started_at\"\n"
+            f"echo \"$AGENT_CMD\" > \"$TASK_DIR/agent_cmd\"\n"
+            f"echo \"$RUN_DIR\" > \"$TASK_DIR/run_dir\"\n"
+            f"echo \"$$\" > \"$TASK_DIR/pid\"\n"
+            f"mkdir -p \"$RUN_DIR\"\n"
+            f"cd \"$RUN_DIR\"\n"
+            f"eval \"$AGENT_CMD\" > \"$TASK_DIR/stdout\" 2> \"$TASK_DIR/stderr\"\n"
+            f"echo \"$?\" > \"$TASK_DIR/exit_status\"\n"
         )
 
-        remote_cmd = f"nohup sh -c {shlex.quote(wrapper)} > /dev/null 2>&1 &"
-        result = self._run_ssh(remote_cmd, timeout=15)
+        wrapper_path = f"{task_dir}/runner.sh"
+
+        # Step 1: write the wrapper script
+        write_result = self._write_remote_file(wrapper_path, wrapper_script)
+        if write_result.returncode != 0:
+            return f"Failed to write wrapper: {write_result.stderr.strip() or write_result.stdout.strip()}"
+
+        # Step 2: make it executable and run via nohup
+        run_cmd = f"chmod +x {wrapper_path} && nohup {wrapper_path} > /dev/null 2>&1 &"
+        result = self._run_ssh(run_cmd, timeout=15)
         if result.returncode != 0:
             return f"SSH submit failed: {result.stderr.strip() or result.stdout.strip()}"
         return None

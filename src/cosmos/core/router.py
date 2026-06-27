@@ -65,6 +65,7 @@ class TaskRouter:
                     host_config=host_cfg,
                     agent_command=agent_cli,
                     capabilities=self._get_remote_capabilities(agent_cli),
+                    model=ac[agent_cli].model,
                 )
                 self.agents[remote_name] = remote
                 self.remote_agents[remote_name] = remote
@@ -86,30 +87,28 @@ class TaskRouter:
         """Resolve agent by name, host, or capability.
 
         Priority:
-          1. Exact name match
-          2. host/agent_name (remote)
-          3. Capability match (checks local first, then remote)
+          1. If host is given → remote agent matching host+agent_name
+          2. Exact name match (local, only if no host specified)
+          3. Capability match (local, then remote)
           4. Fallback chain
         """
         name = agent_name or self.config.default_agent
 
-        # 1. Exact match by name
-        if name in self.agents and self.agents[name].check_available():
-            return self.agents[name]
-
-        # 2. Host + agent name → remote
+        # 1. If host specified → resolve remote first
         if host:
-            # Try remote names that match host
             for rname, ragent in self.remote_agents.items():
                 if rname.startswith(f"{host}/"):
                     if agent_name and not rname.endswith(f"/{agent_name}"):
                         continue
                     if ragent.check_available():
                         return ragent
-            # Try the host directly as a remote-runner name
-            remote_key = f"{host}/{agent_name or 'hermes'}"
+            remote_key = f"{host}/{agent_name or self.config.default_agent}"
             if remote_key in self.remote_agents and self.remote_agents[remote_key].check_available():
                 return self.remote_agents[remote_key]
+
+        # 2. Exact match by name (local only)
+        if not host and name in self.agents and self.agents[name].check_available():
+            return self.agents[name]
 
         # 3. Capability match (local first, then remote)
         if required_capability:
@@ -151,6 +150,7 @@ class TaskRouter:
     def run_task(self, description: str, agent_name: Optional[str] = None,
                  host: Optional[str] = None,
                  workdir: Optional[str] = None,
+                 path: Optional[str] = None,
                  metadata: Optional[dict] = None) -> dict:
         """Create a task and run it. For remote hosts, submits in background.
 
@@ -174,22 +174,35 @@ class TaskRouter:
         if agent.name in self.remote_agents:
             remote_agent = self.remote_agents[agent.name]
             self.store.update_task(task_id, status="running")
-            result: AgentResult = remote_agent.run(description, workdir=workdir)
+            # Use path if provided, otherwise workdir for remote run directory
+            remote_run_dir = path or workdir
+            result: AgentResult = remote_agent.run(description, workdir=remote_run_dir)
 
             if result.success and result.artifacts.get("remote_task_id"):
                 # Store remote info in metadata
                 remote_id = result.artifacts["remote_task_id"]
+                effective_run = result.artifacts.get("run_path", remote_run_dir or f"~/.cosmos/{task_id}")
+
+                # Check if the task completed during the initial poll
+                already_completed = result.artifacts.get("completed", False)
+                task_status = "completed" if (already_completed and result.success) else \
+                              "failed" if (already_completed and not result.success) else \
+                              "running"
+
                 self.store.update_task(
-                    task_id, status="running",
-                    result=result.output,
+                    task_id, status=task_status,
+                    result=result.output or None,
                     metadata={
                         **task_metadata,
                         "remote": True,
                         "remote_host": remote_agent.host_name,
                         "remote_host_address": remote_agent.host_config.host,
                         "remote_task_id": remote_id,
+                        "run_path": effective_run,
                     },
                 )
+                if task_status == "failed":
+                    self.store.update_task(task_id, error=result.error or result.stderr or "Remote task failed")
             else:
                 self.store.update_task(
                     task_id, status="failed",

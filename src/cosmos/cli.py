@@ -72,16 +72,20 @@ def task(
     description: str = typer.Argument(..., help="Описание задачи"),
     agent: str = typer.Option(None, "--agent", "-a", help="Агент (hermes, claude, opencode...)"),
     host: str = typer.Option(None, "--host", "-h", help="Удалённый хост (из cosmos.yaml remote_hosts)"),
+    path: str = typer.Option(None, "--path", "-p", help="Рабочая папка на удалённом хосте (по умолчанию ~/.cosmos/<id>)"),
 ):
     """Создать и выполнить задачу через агента.
 
     Укажите --host для выполнения на удалённом сервере через SSH.
     Удалённые задачи запускаются в фоне, коннект не удерживается.
+
+    Укажите --path для задания рабочей папки на удалённом хосте.
+    Если не указано, создаётся ~/.cosmos/<id>/.
     """
     router = _get_router()
 
     with console.status("[bold green]Выполняю задачу...") as _s:
-        result = router.run_task(description, agent_name=agent, host=host)
+        result = router.run_task(description, agent_name=agent, host=host, path=path)
 
     is_remote = (result.get("metadata") or {}).get("remote", False)
     status_icon = "✅" if result["status"] == "completed" else "❌"
@@ -96,6 +100,7 @@ def task(
         meta = result.get("metadata", {})
         console.print(f"   Хост:   {meta.get('remote_host', '?')} ({meta.get('remote_host_address', '?')})")
         console.print(f"   Remote ID: {meta.get('remote_task_id', '?')}")
+        console.print(f"   Path:   {meta.get('run_path', '~/.cosmos/<id>')}")
         if result["status"] == "running":
             console.print("[yellow]   ⏳ Задача выполняется на удалённом сервере.[/]")
             console.print("   Используйте [bold]cosmos status --poll[/bold] для обновления.")

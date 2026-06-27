@@ -22,6 +22,7 @@ class AgentResult:
     error: Optional[str] = None
     exit_code: int = 0
     duration_sec: float = 0.0
+    stderr: str = ""
     artifacts: dict = field(default_factory=dict)
     # Verifier results
     verified: Optional[bool] = None
