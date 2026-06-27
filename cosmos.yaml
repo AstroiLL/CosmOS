@@ -1,0 +1,66 @@
+# CosmOS — главный конфиг
+# Переносимый файл. Секреты — в .env, не здесь.
+
+project:
+  name: CosmOS
+  version: 0.1.0
+  root: ~/Sync/GPT/CosmOS
+
+# Подключённые агенты
+agents:
+  default: hermes
+  hermes:
+    command: hermes
+    timeout_sec: 600
+  claude:
+    command: claude
+    timeout_sec: 600
+  codex:
+    command: codex
+    timeout_sec: 600
+  opencode:
+    command: opencode
+    timeout_sec: 600
+    enabled: true
+
+# Интерфейсы
+interfaces:
+  cli:
+    enabled: true
+  api:
+    enabled: false
+    host: 127.0.0.1
+    port: 8400
+  web:
+    enabled: false
+    port: 8401
+  telegram:
+    enabled: false
+
+# Память
+memory:
+  sqlite:
+    enabled: true
+    path: data/cosmos.sqlite
+  obsidian:
+    enabled: true
+    vault_path: ~/Sync/Obsidian/Mobile
+    notes_folder: CosmOS
+  mem0:
+    enabled: false
+  vector:
+    enabled: false
+
+# Выполнение
+execution:
+  default_timeout_sec: 600
+  use_worktrees: true
+  verify_results: true
+  max_concurrent_tasks: 3
+
+# Логирование
+logging:
+  level: INFO
+  dir: data/logs
+  max_file_size_mb: 10
+  keep_days: 30

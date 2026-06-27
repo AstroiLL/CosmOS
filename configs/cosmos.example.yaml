@@ -1,0 +1,35 @@
+project:
+  name: CosmOS
+  root: ~/Sync/GPT/CosmOS
+
+agents:
+  default: hermes
+  hermes:
+    command: hermes
+  claude:
+    command: claude
+  codex:
+    command: codex
+
+interfaces:
+  cli: true
+  web: false
+  telegram: true
+  api: false
+
+memory:
+  obsidian:
+    enabled: true
+    vault_path: ~/Sync/Obsidian/Mobile
+  sqlite:
+    enabled: true
+    path: data/cosmos.sqlite
+  mem0:
+    enabled: false
+  vector:
+    enabled: false
+
+execution:
+  default_timeout_sec: 600
+  use_worktrees: true
+  verify_results: true

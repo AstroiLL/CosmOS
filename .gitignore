@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local data/logs
+data/logs/*
+data/sessions/*
+data/tasks/*
+*.sqlite
+*.db
+
+# Secrets
+.env
+*.secret
+client_secret_*.json
