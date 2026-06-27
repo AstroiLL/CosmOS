@@ -49,9 +49,19 @@ class RemoteAgent(BaseAgent):
             escaped = query.replace("'", "'\\''")
             cmd_parts.append(f"'{escaped}'")
 
+        agent_cmd = " ".join(cmd_parts)
+
+        # Prepend environment if configured
+        env_exports = ""
+        if self.host_config.shell_env:
+            exports = []
+            for key, val in self.host_config.shell_env.items():
+                exports.append(f"export {key}='{val}'")
+            env_exports = " && ".join(exports) + " && "
+
         if workdir:
-            return f"cd {workdir} && {' '.join(cmd_parts)}"
-        return " ".join(cmd_parts)
+            return f"cd {workdir} && {env_exports}{agent_cmd}"
+        return f"{env_exports}{agent_cmd}"
 
     def check_available(self) -> bool:
         """Check if the remote host is reachable via SSH."""

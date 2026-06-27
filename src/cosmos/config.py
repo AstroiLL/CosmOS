@@ -23,6 +23,7 @@ class RemoteHostConfig(BaseModel):
     workdir: str = "~/CosmOS/tasks"
     timeout_sec: int = 3600
     agents: list[str] = []  # which agent CLIs are available on this host
+    shell_env: dict[str, str] = Field(default_factory=dict)  # extra env vars (e.g. PATH additions)
 
 
 class MemorySQLiteConfig(BaseModel):

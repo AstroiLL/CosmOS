@@ -8,15 +8,34 @@ project:
 
 # Удалённые хосты (SSH-агенты)
 remote_hosts:
-  # Пример:
-  # devbox:
-  #   host: 192.168.1.100
-  #   user: astroill
-  #   port: 22
-  #   key: ~/.ssh/id_ed25519
-  #   workdir: ~/CosmOS/tasks
-  #   timeout_sec: 3600
-  #   agents: [claude, opencode]  # какие CLI доступны на хосте
+  geekom:
+    host: 10.10.10.13
+    user: astroill
+    port: 22
+    key: ~/.ssh/id_rsa
+    workdir: ~/CosmOS/tasks
+    timeout_sec: 3600
+    agents: [opencode]
+    shell_env:
+      PATH: /home/astroill/.opencode/bin:$PATH
+  kz:
+    host: 45.152.87.160
+    user: n8n
+    port: 22
+    key: ~/.ssh/ilyash
+    workdir: ~/CosmOS/tasks
+    timeout_sec: 3600
+    agents: [opencode]
+    shell_env:
+      PATH: /home/n8n/.opencode/bin:$PATH
+  relaxagent:
+    host: 203.161.41.197
+    user: agent
+    port: 22
+    key: ~/.ssh/relaxagent
+    workdir: ~/CosmOS/tasks
+    timeout_sec: 3600
+    agents: [opencode]
 
 # Подключённые агенты
 agents:
