@@ -77,13 +77,16 @@
 
 ## Phase 5 — Web UI
 
-- [ ] Dashboard
-- [ ] Tasks screen
-- [ ] Agents screen
-- [ ] Memory screen
-- [ ] Automations screen
-- [ ] Settings screen
-- [ ] UI по референсам из `img/`
+- [x] Svelte 5 + Vite scaffold, SPA routing, dark theme
+- [x] Layout: Header + Sidebar + Main content
+- [x] Mission Control — карточки агентов, последние задачи, поиск памяти
+- [x] Tasks — список задач с фильтрацией по статусу
+- [x] Task Detail — детали одной задачи
+- [x] Chat — интерфейс чата с агентом (Markdown-рендеринг через marked)
+- [x] Agents — список агентов с возможностями и статусом
+- [x] Memory — поиск по SQLite + Obsidian
+- [x] Settings — системная информация
+- [x] API integration — FastAPI раздаёт статику, SPA-роутинг, proxy для dev
 
 ## Phase 6 — Automation
 

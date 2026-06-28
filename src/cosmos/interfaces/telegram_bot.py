@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Optional
 
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 from ..config import CosmOSConfig
 from ..core.state import TaskStore
@@ -52,6 +52,7 @@ class TelegramBot:
     # ── Handlers ─────────────────────────────────────────
 
     def _register_handlers(self, app: Application):
+        """Register handlers. Command handlers first, then plain text → /task."""
         app.add_handler(CommandHandler("start", self.cmd_start))
         app.add_handler(CommandHandler("help", self.cmd_help))
         app.add_handler(CommandHandler("task", self.cmd_task))
@@ -59,6 +60,8 @@ class TelegramBot:
         app.add_handler(CommandHandler("memory", self.cmd_memory))
         app.add_handler(CommandHandler("doctor", self.cmd_doctor))
         app.add_handler(CommandHandler("agents", self.cmd_agents))
+        # Plain text → автоматически создаёт задачу
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_text))
 
     async def _check_user(self, update: Update) -> bool:
         """Check if user is allowed. Reject silently if not."""
@@ -77,6 +80,42 @@ class TelegramBot:
             await update.message.reply_text(text, disable_web_page_preview=True)
         except Exception as e:
             logger.warning("Failed to send reply: %s", e)
+
+    # ── Plain text → задача ─────────────────────────────
+
+    async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Любой текст без слэша — создаёт задачу."""
+        if not await self._check_user(update):
+            return
+        text = update.message.text.strip()
+        if not text:
+            return
+        # Парсим --agent и --host как в cmd_task
+        parts = text.split()
+        description_parts = []
+        agent_name: Optional[str] = None
+        host: Optional[str] = None
+        it = iter(parts)
+        for arg in it:
+            if arg == "--agent":
+                agent_name = next(it, None)
+            elif arg == "--host":
+                host = next(it, None)
+            else:
+                description_parts.append(arg)
+        description = " ".join(description_parts)
+
+        await self._reply(update, f"⏳ Создаю задачу: *{description}*")
+        try:
+            task = self.router.run_task(
+                description=description,
+                agent_name=agent_name,
+                host=host,
+            )
+            await self._reply(update, self._format_task_result(task))
+        except Exception as e:
+            logger.exception("Task failed")
+            await self._reply(update, f"❌ *Ошибка:* {e}")
 
     # ── /start, /help ──────────────────────────────────
 

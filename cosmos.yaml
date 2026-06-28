@@ -61,6 +61,7 @@ interfaces:
   web:
     enabled: false
     port: 8401
+    host: "0.0.0.0"
   telegram:
     enabled: true
     bot_token: "${COSMOS_TELEGRAM_BOT_TOKEN}"

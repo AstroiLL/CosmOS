@@ -69,6 +69,7 @@ class CLIConfig(BaseModel):
 class WebConfig(BaseModel):
     """Web UI interface config (future)."""
     enabled: bool = False
+    host: str = "0.0.0.0"
     port: int = 8401
 
 

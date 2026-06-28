@@ -16,3 +16,6 @@ data/tasks/*
 *.secret
 client_secret_*.json
 .last-sync
+
+# UI / Node
+ui/node_modules/

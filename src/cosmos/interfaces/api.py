@@ -21,6 +21,9 @@ from typing import Optional
 import uvicorn
 from fastapi import FastAPI, HTTPException, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.staticfiles import StaticFiles
+from starlette.requests import Request
+from starlette.responses import FileResponse
 from pydantic import BaseModel
 
 from ..config import CosmOSConfig
@@ -279,6 +282,24 @@ def create_app(config: CosmOSConfig,
                 })
 
         return {"results": results[:req.limit], "count": min(len(results), req.limit)}
+
+    # ── Serve SPA (built UI) ────────────────────────────
+    ui_dir = Path(__file__).resolve().parent.parent.parent.parent / "ui" / "dist"
+    if ui_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(ui_dir / "assets")), name="cosmos_assets")
+
+        @app.get("/{full_path:path}")
+        async def serve_spa(full_path: str, request: Request):
+            # Only handle non-API routes
+            if full_path.startswith("api/"):
+                from fastapi.responses import JSONResponse
+                return JSONResponse({"detail": "Not Found"}, status_code=404)
+            index_path = ui_dir / "index.html"
+            if index_path.exists():
+                return FileResponse(str(index_path))
+            return {"error": "UI not built"}
+    else:
+        logger.info("UI not built — run 'npm run build' in ui/ to enable the web interface")
 
     return app
 
