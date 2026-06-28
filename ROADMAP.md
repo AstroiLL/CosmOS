@@ -12,42 +12,61 @@
 - [x] Выбрать стек первого прототипа: `docs/tech-stack.md`
 - [x] Создать `cosmos.yaml`
 - [x] Создать `.env.example`
+- [x] Инициализировать Git-репозиторий
+- [x] Создать публичный репозиторий на GitHub (AstroiLL/CosmOS)
+- [x] Настроить `.gitignore` (исключены `.env`, `*.sqlite`, `__pycache__/`, секреты)
+- [x] Запушить проект в GitHub
 
 ## Phase 1 — CLI MVP
 
-- [x] `cosmos task "..."`
+- [x] `cosmos task "..."` — создать и выполнить задачу
 - [x] SQLite task/session store
-- [x] router для выбора Hermes/Claude/Codex
+- [x] Router для выбора Hermes/Claude/OpenCode
 - [x] Hermes adapter
-- [x] generic CLI adapter
-- [x] базовый лог задач + events
-- [x] конфиг агентов
-- [x] `cosmos status`
-- [x] `cosmos doctor`
+- [x] generic CLI adapter (Shell)
+- [x] Базовый лог задач + events
+- [x] Конфиг агентов (`cosmos.yaml`)
+- [x] `cosmos status` — список задач
+- [x] `cosmos doctor` — проверка окружения
+- [x] `cosmos agents` — таблица агентов
 
 ## Phase 2 — Agent adapters
 
-- [x] Claude Code adapter — `claude -p "query"`
-- [ ] ~~Codex adapter~~ (отложено)
+- [x] Claude adapter — `claude -p "query"`
 - [x] OpenCode adapter — `opencode run --model <m> <msg>`
-- [x] capability registry
-- [x] worktree isolation для кодовых задач — `WorktreeManager`
-- [x] verifier результата — `Verifier`
+- [x] Capability registry — каждый агент заявляет возможности
+- [x] Worktree isolation для кодовых задач — `WorktreeManager`
+- [x] Verifier результата — `Verifier` (exit code, вывод, ошибки, таймаут)
+- [ ] ~~Codex adapter~~ (отложено)
 
-## Phase 3 — Memory MVP
+## Phase 2.5 — Remote SSH agents
+
+- [x] `SSHRunner` — submit/poll/cancel/cleanup через SSH
+- [x] Фоновый запуск: `nohup` + wrapper script, коннект не удерживается
+- [x] `RemoteAgent(BaseAgent)` — адаптер для удалённых CLI
+- [x] Remote host config (`remote_hosts` в `cosmos.yaml`)
+- [x] `shell_env` — кастомное окружение (PATH и т.д.)
+- [x] `cosmos task "..." --host <name> --agent <agent>` — задача на удалённом хосте
+- [x] `cosmos task --path /custom/dir` — рабочая папка на удалённой машине
+- [x] Авто `~/.cosmos/<id>/` при отсутствии `--path`
+- [x] `cosmos status --poll` — проверить завершение удалённых задач
+- [x] `cosmos remote {list,poll,cancel,clean}` — управление удалёнными задачами
+- [x] Трекинг-файлы на хосте: `~/.cosmos/tasks/<id>/{pid,stdout,stderr,exit_status}`
+- [x] Подключённые хосты: geekom (✅ opencode), kz (✅ opencode), relaxagent (⏳ opencode)
+
+## Phase 3 — Memory
 
 - [ ] Obsidian adapter
-- [ ] SQLite task/session/event store
-- [ ] простая индексация заметок
-- [ ] memory routing: SQLite / Obsidian / Mem0 / skills
-- [ ] export/import памяти
+- [ ] Memory routing: SQLite / Obsidian / Mem0 / skills
+- [ ] Индексация заметок
+- [ ] Export/import памяти
 
 ## Phase 4 — API + Telegram
 
-- [ ] HTTP API
-- [ ] Telegram interface
-- [ ] webhook endpoint
-- [ ] уведомления о завершении задач
+- [ ] HTTP API (FastAPI / Hermes API)
+- [ ] Telegram interface (бот для отправки задач и получения результатов)
+- [ ] Webhook endpoint
+- [ ] Уведомления о завершении задач
 
 ## Phase 5 — Web UI
 
@@ -61,27 +80,31 @@
 
 ## Phase 6 — Automation
 
-- [ ] cron tasks
-- [ ] webhooks
-- [ ] watchers
-- [ ] scheduled summaries
-- [ ] stuck task detector
+- [x] Cron — ежедневный авто-коммит и пуш в GitHub (3:00 MSK)
+- [ ] Slack/Telegram-оповещения
+- [ ] Watchers (файловые/директориальные)
+- [ ] Scheduled summaries
+- [ ] Stuck task detector
 
 ## Phase 7 — Portable deployment
 
-- [ ] `scripts/install.sh`
-- [ ] `cosmos doctor`
-- [ ] backup/restore scripts
+- [ ] `scripts/install.sh` — установка зависимостей и окружения
+- [ ] `cosmos doctor` (есть, расширить)
+- [ ] Backup/restore scripts
 - [ ] Dockerfile
 - [ ] docker-compose.yaml
 - [ ] systemd user service
-- [ ] deployment guide
+- [ ] Deployment guide
 
 ## Phase 8 — Hardening
 
-- [ ] permission model
-- [ ] audit log
-- [ ] approvals for risky actions
-- [ ] tests
-- [ ] observability
-- [ ] recovery procedures
+- [ ] Permission model
+- [ ] Audit log
+- [ ] Approvals for risky actions
+- [ ] Tests (unit / integration / e2e)
+- [ ] Observability (metrics, traces)
+- [ ] Recovery procedures
+
+---
+
+**Legend:** `[x]` — done, `[ ]` — todo, `[~]` — in progress, `[~~]` — cancelled/delayed
