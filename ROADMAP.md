@@ -66,10 +66,14 @@
 
 ## Phase 4 — API + Telegram
 
-- [ ] HTTP API (FastAPI / Hermes API)
-- [ ] Telegram interface (бот для отправки задач и получения результатов)
-- [ ] Webhook endpoint
-- [ ] Уведомления о завершении задач
+- [x] Telegram bot scaffold — `cosmos bot telegram`, python-telegram-bot, polling
+- [x] Bot commands — /task, /status, /memory, /doctor, /agents, /help
+- [x] Markdown formatter для результатов задач
+- [x] HTTP API (FastAPI) — `cosmos api`, config, health/version
+- [x] API endpoints — tasks CRUD, agents, doctor, memory/search
+- [x] API key auth — Bearer middleware, env-переменная, dev mode fallback
+- [x] .env загрузка через python-dotenv
+- [ ] Уведомления о завершении задач (отложено)
 
 ## Phase 5 — Web UI
 

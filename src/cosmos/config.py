@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 import yaml
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
 
@@ -113,6 +114,13 @@ class CosmOSConfig(BaseModel):
             path = Path.home() / "Sync/GPT/CosmOS/cosmos.yaml"
         if not path.exists():
             raise FileNotFoundError(f"Config not found: {path}")
+
+        # Load .env from project root and Hermes secrets
+        project_root = path.parent
+        dotenv_path = project_root / ".env"
+        if dotenv_path.exists():
+            load_dotenv(dotenv_path)
+
         raw_text = path.read_text()
         # Resolve ${VAR} and ${VAR:-default} from environment
         raw_text = cls._resolve_env(raw_text)

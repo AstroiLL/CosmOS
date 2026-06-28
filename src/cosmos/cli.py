@@ -577,5 +577,26 @@ def bot(
         console.print(f"[red]Неизвестная платформа: {platform}. Допустимо: telegram[/]")
 
 
+@app.command()
+def api(
+    host: Optional[str] = typer.Option(None, "--host", "-h",
+                                        help="Хост (по умолчанию из конфига)"),
+    port: Optional[int] = typer.Option(None, "--port", "-p",
+                                       help="Порт (по умолчанию из конфига)"),
+):
+    """Запустить HTTP API сервер."""
+    cfg = _get_config()
+    if not cfg.interfaces.api.enabled:
+        console.print("[red]API отключён в конфиге (interfaces.api.enabled=false)[/]")
+        raise typer.Exit(1)
+
+    store = _get_store()
+    router = _get_router()
+
+    from .interfaces.api import run_api
+    console.print("[blue]Запуск API сервера...[/]")
+    run_api(cfg, router, store)
+
+
 def main():
     app()

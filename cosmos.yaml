@@ -53,9 +53,11 @@ interfaces:
   cli:
     enabled: true
   api:
-    enabled: false
+    enabled: true
     host: 127.0.0.1
-    port: 8400
+    port: 7455
+    api_key: "${COSMOS_API_KEY}"
+    cors_origins: []
   web:
     enabled: false
     port: 8401
