@@ -56,10 +56,13 @@
 
 ## Phase 3 — Memory
 
-- [ ] Obsidian adapter
-- [ ] Memory routing: SQLite / Obsidian / Mem0 / skills
-- [ ] Индексация заметок
-- [ ] Export/import памяти
+- [x] SQLiteMemory — key-value store + FTS5 full-text search
+- [x] Obsidian adapter — .md в Vault/CosmOS/{Tasks,Knowledge,Agents,Journal}
+- [x] Memory routing: SQLite + Obsidian активны одновременно
+- [x] Индексация: FTS5 (SQLite) + ripgrep (Obsidian vault)
+- [x] `cosmos memory {write,search,status}` — CLI для работы с памятью
+- [x] Auto-write результатов задач в оба хранилища
+- [ ] Export/import памяти (отложено)
 
 ## Phase 4 — API + Telegram
 
