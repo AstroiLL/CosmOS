@@ -5,6 +5,7 @@ background and can be polled later.
 """
 
 import json
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -30,7 +31,37 @@ class TaskRouter:
         self.memory_stores = memory_stores or {}
         self.agents: dict[str, BaseAgent] = {}
         self.remote_agents: dict[str, RemoteAgent] = {}
+        self._agent_info_cache: list[AgentInfo] | None = None
+        self._agent_info_cache_time: float = 0.0
         self._init_agents()
+        # Pre-populate cache with all-true availability to avoid SSH delays on first load
+        self._prefill_cache()
+
+    def _prefill_cache(self):
+        """Build initial cache: mark all agents as available (optimistic).
+        First real list_agents() call will update actual availability."""
+        results = []
+        for agent in self.agents.values():
+            results.append(AgentInfo(
+                name=agent.name,
+                command=agent.command,
+                capabilities=agent.capabilities,
+                available=True,  # optimistic
+            ))
+        # Annotate remote hosts
+        for name, ra in self.remote_agents.items():
+            for r in results:
+                if r.name == name:
+                    r.description = f"Remote on {ra.host_name} ({ra.host_config.host})"
+        # Add shell
+        results.append(AgentInfo(
+            name="shell", command="bash",
+            capabilities={Capability.SHELL},
+            available=True,
+            description="Generic shell command executor",
+        ))
+        self._agent_info_cache = results
+        self._agent_info_cache_time = time.time()
 
     def _init_agents(self):
         """Initialise available agents from config — local and remote."""
@@ -131,7 +162,12 @@ class TaskRouter:
         return ShellAgent()
 
     def list_agents(self) -> list[AgentInfo]:
-        """List all registered agents with availability and capabilities."""
+        """List all registered agents with availability and capabilities.
+        Results are cached for 10 seconds to avoid repeated SSH checks."""
+        now = time.time()
+        if self._agent_info_cache is not None and now - self._agent_info_cache_time < 10:
+            return self._agent_info_cache
+
         results = []
         for agent in self.agents.values():
             info = agent.info()
@@ -147,6 +183,8 @@ class TaskRouter:
             available=True,
             description="Generic shell command executor",
         ))
+        self._agent_info_cache = results
+        self._agent_info_cache_time = now
         return results
 
     def run_task(self, description: str, agent_name: Optional[str] = None,

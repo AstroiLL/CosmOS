@@ -88,7 +88,7 @@ def create_app(config: CosmOSConfig,
             )
         return credentials.credentials
 
-    # ── Routes ─────────────────────────────────────────
+    # ── GET routes (no auth — read-only, safe for LAN) ─
 
     @app.get("/api/v1/health", tags=["System"])
     async def health():
@@ -105,7 +105,71 @@ def create_app(config: CosmOSConfig,
             "remote_hosts": len(config.remote_hosts),
         }
 
-    # ── Tasks ──────────────────────────────────────────
+    @app.get("/api/v1/tasks", tags=["Tasks"])
+    async def list_tasks(
+        limit: int = 10,
+        status_filter: Optional[str] = None,
+    ):
+        """List recent tasks (optionally filtered by status)."""
+        tasks = store.list_tasks(limit=limit)
+        if status_filter:
+            tasks = [t for t in tasks if t.get("status") == status_filter]
+        return {"tasks": tasks, "count": len(tasks)}
+
+    @app.get("/api/v1/tasks/{task_id}", tags=["Tasks"])
+    async def get_task(
+        task_id: str,
+    ):
+        """Get task details by ID."""
+        task = store.get_task(task_id)
+        if not task:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Task {task_id} not found",
+            )
+        return task
+
+    @app.get("/api/v1/agents", tags=["Agents"])
+    async def list_agents():
+        """List all registered agents with availability and capabilities."""
+        agents = router.list_agents()
+        result = []
+        for a in agents:
+            result.append({
+                "name": a.name,
+                "command": a.command,
+                "available": a.available,
+                "capabilities": sorted(c.value for c in a.capabilities),
+                "description": a.description,
+            })
+        return {"agents": result, "count": len(result)}
+
+    @app.get("/api/v1/doctor", tags=["System"])
+    async def doctor():
+        """Run diagnostics — uses cached agent info."""
+        checks = {
+            "config": f"{config.name} v{config.version}",
+            "task_store": "ok",
+            "agents_available": 0,
+            "agents_total": 0,
+            "remote_hosts": len(config.remote_hosts),
+        }
+        try:
+            store.health()
+            checks["task_store"] = "ok"
+        except Exception:
+            checks["task_store"] = "error"
+
+        agents = router.list_agents()
+        checks["agents_total"] = len(agents)
+        checks["agents_available"] = len([a for a in agents if a.available])
+
+        return {
+            "status": "ok" if checks["task_store"] == "ok" else "degraded",
+            "checks": checks,
+        }
+
+    # ── POST routes (require auth) ─────────────────────
 
     @app.post("/api/v1/tasks", tags=["Tasks"])
     async def create_task(
@@ -120,32 +184,6 @@ def create_app(config: CosmOSConfig,
             workdir=req.workdir,
             path=req.path,
         )
-        return task
-
-    @app.get("/api/v1/tasks", tags=["Tasks"])
-    async def list_tasks(
-        limit: int = 10,
-        status_filter: Optional[str] = None,
-        api_key: str = Security(verify_api_key),
-    ):
-        """List recent tasks (optionally filtered by status)."""
-        tasks = store.list_tasks(limit=limit)
-        if status_filter:
-            tasks = [t for t in tasks if t.get("status") == status_filter]
-        return {"tasks": tasks, "count": len(tasks)}
-
-    @app.get("/api/v1/tasks/{task_id}", tags=["Tasks"])
-    async def get_task(
-        task_id: str,
-        api_key: str = Security(verify_api_key),
-    ):
-        """Get task details by ID."""
-        task = store.get_task(task_id)
-        if not task:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Task {task_id} not found",
-            )
         return task
 
     @app.post("/api/v1/tasks/{task_id}/cancel", tags=["Tasks"])
@@ -188,56 +226,6 @@ def create_app(config: CosmOSConfig,
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No remote agent found for host {host_name}",
         )
-
-    # ── Agents ─────────────────────────────────────────
-
-    @app.get("/api/v1/agents", tags=["Agents"])
-    async def list_agents(
-        api_key: str = Security(verify_api_key),
-    ):
-        """List all registered agents with availability and capabilities."""
-        agents = router.list_agents()
-        result = []
-        for a in agents:
-            result.append({
-                "name": a.name,
-                "command": a.command,
-                "available": a.available,
-                "capabilities": sorted(c.value for c in a.capabilities),
-                "description": a.description,
-            })
-        return {"agents": result, "count": len(result)}
-
-    # ── Doctor ─────────────────────────────────────────
-
-    @app.get("/api/v1/doctor", tags=["System"])
-    async def doctor(
-        api_key: str = Security(verify_api_key),
-    ):
-        """Run diagnostics."""
-        checks = {
-            "config": f"{config.name} v{config.version}",
-            "task_store": "ok",
-            "agents_available": 0,
-            "agents_total": 0,
-            "remote_hosts": len(config.remote_hosts),
-        }
-        try:
-            store.health()
-            checks["task_store"] = "ok"
-        except Exception:
-            checks["task_store"] = "error"
-
-        agents = router.list_agents()
-        checks["agents_total"] = len(agents)
-        checks["agents_available"] = len([a for a in agents if a.available])
-
-        return {
-            "status": "ok" if checks["task_store"] == "ok" else "degraded",
-            "checks": checks,
-        }
-
-    # ── Memory ─────────────────────────────────────────
 
     @app.post("/api/v1/memory/search", tags=["Memory"])
     async def memory_search(

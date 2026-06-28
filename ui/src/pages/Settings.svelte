@@ -1,20 +1,20 @@
 <script>
-  import { onMount } from 'svelte';
-  import { doctor, health } from '../api.js';
+  import { health, doctor } from '../api.js';
 
   let info = $state({});
   let loading = $state(true);
 
-  onMount(async () => {
-    try {
-      const [h, d] = await Promise.all([health(), doctor()]);
+  function init() {
+    Promise.all([health(), doctor()]).then(([h, d]) => {
       info = { ...h, checks: d.checks || {} };
-    } catch (e) {
-      console.error('Failed to load info', e);
-    } finally {
       loading = false;
-    }
-  });
+    }).catch(e => {
+      console.error('Failed to load info', e);
+      loading = false;
+    });
+  }
+
+  $effect(init);
 </script>
 
 <div class="page">
