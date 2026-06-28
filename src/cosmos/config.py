@@ -1,5 +1,7 @@
 """CosmOS config — parses cosmos.yaml with Pydantic."""
 
+import os
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -41,6 +43,42 @@ class MemoryConfig(BaseModel):
     obsidian: MemoryObsidianConfig = Field(default_factory=MemoryObsidianConfig)
 
 
+class TelegramConfig(BaseModel):
+    """Telegram bot interface config."""
+    enabled: bool = False
+    bot_token: str = ""
+    allowed_user_ids: list[int] = Field(default_factory=list)
+    polling_interval: int = 3
+
+
+class APIConfig(BaseModel):
+    """HTTP API interface config."""
+    enabled: bool = False
+    host: str = "127.0.0.1"
+    port: int = 7455
+    api_key: str = ""
+    cors_origins: list[str] = Field(default_factory=list)
+
+
+class CLIConfig(BaseModel):
+    """CLI interface config."""
+    enabled: bool = True
+
+
+class WebConfig(BaseModel):
+    """Web UI interface config (future)."""
+    enabled: bool = False
+    port: int = 8401
+
+
+class InterfacesConfig(BaseModel):
+    """All interfaces config block."""
+    cli: CLIConfig = Field(default_factory=CLIConfig)
+    api: APIConfig = Field(default_factory=APIConfig)
+    web: WebConfig = Field(default_factory=WebConfig)
+    telegram: TelegramConfig = Field(default_factory=TelegramConfig)
+
+
 class ExecutionConfig(BaseModel):
     default_timeout_sec: int = 600
     use_worktrees: bool = True
@@ -64,6 +102,7 @@ class CosmOSConfig(BaseModel):
     })
     default_agent: str = "hermes"
     remote_hosts: dict[str, RemoteHostConfig] = Field(default_factory=dict)
+    interfaces: InterfacesConfig = Field(default_factory=InterfacesConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
@@ -74,10 +113,13 @@ class CosmOSConfig(BaseModel):
             path = Path.home() / "Sync/GPT/CosmOS/cosmos.yaml"
         if not path.exists():
             raise FileNotFoundError(f"Config not found: {path}")
-        raw = yaml.safe_load(path.read_text())
+        raw_text = path.read_text()
+        # Resolve ${VAR} and ${VAR:-default} from environment
+        raw_text = cls._resolve_env(raw_text)
+        raw = yaml.safe_load(raw_text)
         # Merge top-level + nested project block
         data = dict(raw.get("project", {}))
-        for key in ("agents", "remote_hosts", "memory", "execution", "logging"):
+        for key in ("agents", "remote_hosts", "interfaces", "memory", "execution", "logging"):
             if key in raw:
                 value = raw[key]
                 # YAML returns None for empty comment-only blocks
@@ -86,3 +128,16 @@ class CosmOSConfig(BaseModel):
         if "default" in data.get("agents", {}):
             data["default_agent"] = data["agents"].pop("default")
         return cls(**data)
+
+    @staticmethod
+    def _resolve_env(text: str) -> str:
+        """Replace ${VAR} and ${VAR:-default} patterns with env values."""
+
+        def _replace(m: re.Match) -> str:
+            expr = m.group(1)
+            if ":-" in expr:
+                var, default = expr.split(":-", 1)
+                return os.environ.get(var, default)
+            return os.environ.get(expr, "")
+
+        return re.sub(r"\$\{([^}]+)\}", _replace, text)

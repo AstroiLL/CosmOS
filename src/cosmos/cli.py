@@ -536,5 +536,46 @@ def memory(
         console.print(f"[red]Неизвестное действие: {action}. Допустимо: write, search, status[/]")
 
 
+@app.command()
+def bot(
+    platform: str = typer.Argument("telegram",
+                                   help="Платформа бота (telegram)"),
+    daemon: bool = typer.Option(False, "--daemon",
+                                help="Запустить в фоне (через nohup)"),
+):
+    """Запустить интерфейс-бота (Telegram / будущие платформы)."""
+    if platform == "telegram":
+        cfg = _get_config()
+        if not cfg.interfaces.telegram.enabled:
+            console.print("[red]Telegram bot отключён в конфиге (interfaces.telegram.enabled=false)[/]")
+            raise typer.Exit(1)
+        if not cfg.interfaces.telegram.bot_token:
+            console.print("[red]TELEGRAM_COSMOS_BOT_TOKEN не задан. Укажи в .env[/]")
+            raise typer.Exit(1)
+
+        store = _get_store()
+        router = _get_router()
+
+        if daemon:
+            import subprocess
+            import sys
+            # Re-launch self without --daemon in background
+            cmd = [sys.executable, "-m", "cosmos", "bot", "telegram"]
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            console.print(f"[green]✓ Telegram bot запущен в фоне (PID: {proc.pid})[/]")
+            return
+
+        from .interfaces.telegram_bot import TelegramBot
+        console.print("[blue]Запуск Telegram бота...[/]")
+        TelegramBot(cfg, router, store).run()
+    else:
+        console.print(f"[red]Неизвестная платформа: {platform}. Допустимо: telegram[/]")
+
+
 def main():
     app()
