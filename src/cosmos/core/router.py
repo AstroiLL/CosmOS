@@ -23,9 +23,11 @@ from ..agents.verifier import Verifier
 class TaskRouter:
     """Routes a task description to the appropriate agent — local or remote."""
 
-    def __init__(self, config: CosmOSConfig, store: TaskStore):
+    def __init__(self, config: CosmOSConfig, store: TaskStore,
+                 memory_stores: Optional[dict] = None):
         self.config = config
         self.store = store
+        self.memory_stores = memory_stores or {}
         self.agents: dict[str, BaseAgent] = {}
         self.remote_agents: dict[str, RemoteAgent] = {}
         self._init_agents()
@@ -209,6 +211,10 @@ class TaskRouter:
                     result=result.output, error=result.error,
                 )
 
+            # Save to memory (only for completed/failed remote tasks)
+            if result.artifacts.get("completed", False):
+                self._save_to_memory(task_id, description, result, agent.name)
+
             task = self.store.get_task(task_id)
             task["duration_sec"] = round(result.duration_sec, 1)
             return task
@@ -271,6 +277,9 @@ class TaskRouter:
         if wm and effective_workdir:
             wm.remove(effective_workdir)
 
+        # Save to memory
+        self._save_to_memory(task_id, description, result, agent.name)
+
         # Return full task
         task = self.store.get_task(task_id)
         task["duration_sec"] = round(result.duration_sec, 1)
@@ -278,6 +287,50 @@ class TaskRouter:
             task["verified"] = result.verified
             task["verification"] = result.verification_details
         return task
+
+    def _save_to_memory(self, task_id: str, description: str,
+                        result: "AgentResult", agent_name: str):
+        """Save task result to all active memory backends."""
+        if not self.memory_stores:
+            return
+
+        # Build content
+        status = "completed" if result.success else "failed"
+        meta = getattr(result, 'artifacts', {}) or {}
+        host = meta.get("host", meta.get("remote_host", ""))
+        host_info = f" на {host}" if host else ""
+
+        md_content = (
+            f"## {description}\n\n"
+            f"- **Статус:** {status}\n"
+            f"- **Агент:** {agent_name}{host_info}\n"
+            f"- **Время:** {result.duration_sec:.1f}с\n"
+            f"- **ID:** {task_id}\n\n"
+        )
+        if result.output:
+            md_content += "### Результат\n\n```\n" + result.output[:2000] + "\n```\n\n"
+        if result.error:
+            md_content += "### Ошибка\n\n```\n" + result.error[:500] + "\n```\n"
+        if result.stderr:
+            md_content += "### stderr\n\n```\n" + result.stderr[:500] + "\n```\n"
+
+        tags = ["cosmos", agent_name.split("/")[0]]
+        if host:
+            tags.append(host)
+        if not result.success:
+            tags.append("failed")
+
+        task_key = f"Tasks/{task_id}"
+        try:
+            for store in self.memory_stores.values():
+                store.store(task_key, md_content, tags=tags, metadata={
+                    "agent": agent_name,
+                    "host": host,
+                    "task_id": task_id,
+                    "status": status,
+                })
+        except Exception:
+            pass  # Memory write failure shouldn't break the task flow
 
     def poll_remote_task(self, task_id: str) -> Optional[dict]:
         """Poll a remote task and update local store if completed.

@@ -20,6 +20,11 @@ from .core.router import TaskRouter
 from .agents.base import Capability
 from .agents.remote_agent import RemoteAgent
 
+# Memory
+from .memory import MemoryItem
+from .memory.sqlite_memory import SQLiteMemory
+from .memory.obsidian_memory import ObsidianMemory
+
 # Global state (initialised lazily)
 _cfg: CosmOSConfig | None = None
 _store: TaskStore | None = None
@@ -60,7 +65,7 @@ def _get_store() -> TaskStore:
 def _get_router() -> TaskRouter:
     global _router
     if _router is None:
-        _router = TaskRouter(_get_config(), _get_store())
+        _router = TaskRouter(_get_config(), _get_store(), memory_stores=_get_memory())
     return _router
 
 
@@ -415,6 +420,120 @@ def remote(
 
     else:
         console.print(f"[red]Неизвестное действие: {action}. Допустимо: list, poll, cancel, clean[/]")
+
+
+def _get_memory() -> dict[str, SQLiteMemory | ObsidianMemory]:
+    """Initialise memory backends from config."""
+    cfg = _get_config()
+    stores = {}
+
+    # SQLite memory
+    sqlite_path = cfg.memory.sqlite.path
+    if not Path(sqlite_path).is_absolute():
+        root = Path(cfg.root).expanduser()
+        sqlite_path = str(root / sqlite_path)
+    stores["sqlite"] = SQLiteMemory(sqlite_path)
+
+    # Obsidian memory
+    if cfg.memory.obsidian.enabled:
+        stores["obsidian"] = ObsidianMemory(
+            vault_path=cfg.memory.obsidian.vault_path,
+            notes_folder=cfg.memory.obsidian.notes_folder,
+        )
+
+    return stores
+
+
+@app.command()
+def memory(
+    action: str = typer.Argument(..., help="Действие: write, search, status"),
+    key: str = typer.Option("", "--key", "-k", help="Ключ записи (например Tasks/test или Knowledge/arch)"),
+    content: str = typer.Option("", "--content", "-c", help="Содержимое для write"),
+    tags: str = typer.Option("", "--tags", "-t", help="Теги через запятую"),
+    query: str = typer.Option("", "--query", "-q", help="Поисковый запрос"),
+    source: str = typer.Option("all", "--source", "-s", help="Источник: sqlite, obsidian, all"),
+    limit: int = typer.Option(10, "--limit", "-l", help="Лимит результатов"),
+):
+    """Управление памятью CosmOS.
+
+    \b
+    Примеры:
+      cosmos memory write --key Tasks/test --content "результат..." --tags test,ops
+      cosmos memory search --query "архитектура роутера"
+      cosmos memory search --query "ssh" --source obsidian
+      cosmos memory status
+    """
+    stores = _get_memory()
+
+    if action == "write":
+        if not key:
+            console.print("[red]Укажите --key[/]")
+            raise typer.Exit(1)
+        if not content:
+            # Read from stdin if no --content
+            content = typer.prompt("Введите содержимое (Ctrl+D для завершения)",
+                                   default="", show_default=False)
+
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+
+        # Write to all active stores
+        keys = []
+        for name, store in stores.items():
+            k = store.store(key, content, tags=tag_list)
+            keys.append(f"{name}:{k}")
+
+        console.print(f"[green]✓ Записано: {', '.join(keys)}[/]")
+
+    elif action == "search":
+        if not query:
+            console.print("[red]Укажите --query[/]")
+            raise typer.Exit(1)
+
+        results: list[MemoryItem] = []
+        for name, store in stores.items():
+            if source in ("all", name):
+                results.extend(store.search(query, limit=limit))
+
+        # Sort by score descending
+        results.sort(key=lambda x: x.score, reverse=True)
+        results = results[:limit]
+
+        if not results:
+            console.print("[yellow]Ничего не найдено[/]")
+            raise typer.Exit(0)
+
+        table = Table(box=box.ROUNDED)
+        table.add_column("Ключ", style="cyan")
+        table.add_column("Источник", style="blue")
+        table.add_column("Контент", style="white")
+        table.add_column("Теги", style="dim")
+        for item in results:
+            content_preview = item.content[:80].replace("\n", " ")
+            tags_str = ", ".join(item.tags[:3])
+            table.add_row(item.key, item.source, content_preview, tags_str)
+        console.print(table)
+
+    elif action == "status":
+        table = Table(box=box.ROUNDED)
+        table.add_column("Источник", style="cyan")
+        table.add_column("Статус", style="bold")
+        table.add_column("Детали")
+
+        for name, store in stores.items():
+            ok = store.health()
+            icon = "✅" if ok else "❌"
+            if isinstance(store, SQLiteMemory):
+                detail = f"путь: {store.db_path}"
+            elif isinstance(store, ObsidianMemory):
+                detail = f"vault: {store.base}"
+            else:
+                detail = ""
+            table.add_row(name, icon, detail)
+
+        console.print(table)
+
+    else:
+        console.print(f"[red]Неизвестное действие: {action}. Допустимо: write, search, status[/]")
 
 
 def main():
