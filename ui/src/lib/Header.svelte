@@ -14,12 +14,8 @@
 
 <header class="header">
   <div class="header-left">
-    <button class="btn-ghost menu-btn" onclick={toggleSidebar}>
-      {#if sidebarOpen}
-        ◁
-      {:else}
-        ☰
-      {/if}
+    <button class="btn-ghost menu-btn" onclick={toggleSidebar} title="Toggle sidebar">
+      ☰
     </button>
     <span class="logo">CosmOS</span>
     <span class="separator">/</span>

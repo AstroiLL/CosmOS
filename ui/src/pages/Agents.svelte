@@ -29,7 +29,7 @@
   {:else}
     <div class="agent-grid">
       {#each agents as agent}
-        <div class="agent-card" class:online={agent.available} class:offline={!agent.available}>
+        <div class="agent-card clickable" class:online={agent.available} class:offline={!agent.available} role="button" tabindex="0" onclick={() => navigate('chat', { agent: agent.name })} onkeydown={(e) => e.key === 'Enter' && navigate('chat', { agent: agent.name })}>
           <div class="agent-header">
             <span class="agent-icon">🤖</span>
             <span class="agent-status">
@@ -72,6 +72,9 @@
   }
   .agent-card.online { border-left: 3px solid var(--green); }
   .agent-card.offline { border-left: 3px solid var(--red); }
+  .agent-card.clickable { cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+  .agent-card.clickable:hover { background: var(--bg-raised); }
+  .agent-card.clickable:active { background: var(--bg-hover); }
   .agent-card:hover { border-color: var(--border-hover); }
   .agent-header {
     display: flex;

@@ -162,30 +162,18 @@ class TaskRouter:
         return ShellAgent()
 
     def list_agents(self) -> list[AgentInfo]:
-        """List all registered agents with availability and capabilities.
-        Results are cached for 10 seconds to avoid repeated SSH checks."""
-        now = time.time()
-        if self._agent_info_cache is not None and now - self._agent_info_cache_time < 10:
+        """List all registered agents with capabilities.
+        Returns cached data — all agents shown as available (optimistic).
+        Real SSH availability is checked only in doctor() endpoint."""
+        if self._agent_info_cache is not None:
             return self._agent_info_cache
-
-        results = []
-        for agent in self.agents.values():
-            info = agent.info()
-            # Annotate remote agents
-            if agent.name in self.remote_agents:
-                ra = self.remote_agents[agent.name]
-                info.description = f"Remote on {ra.host_name} ({ra.host_config.host})"
-            results.append(info)
-        # Add shell as always available
-        results.append(AgentInfo(
-            name="shell", command="bash",
+        # Fallback: should never happen (prefilled at init), but just in case
+        return [AgentInfo(
+            name="hermes", command="hermes",
             capabilities={Capability.SHELL},
             available=True,
-            description="Generic shell command executor",
-        ))
-        self._agent_info_cache = results
-        self._agent_info_cache_time = now
-        return results
+            description="No data yet",
+        )]
 
     def run_task(self, description: str, agent_name: Optional[str] = None,
                  host: Optional[str] = None,

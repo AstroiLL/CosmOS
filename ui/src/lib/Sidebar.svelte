@@ -1,5 +1,5 @@
 <script>
-  let { currentPage, navigate } = $props();
+  let { currentPage, pageParams = {}, navigate } = $props();
 
   const agents = [
     { name: 'hermes', status: 'online' },
@@ -37,7 +37,7 @@
     {#each agents as agent}
       <button
         class="nav-item"
-        class:active={currentPage === 'chat'}
+        class:active={currentPage === 'chat' && pageParams.agent === agent.name}
         onclick={() => navigate('chat', { agent: agent.name })}
       >
         <span class="agent-dot status-{agent.status}">●</span>

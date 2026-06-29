@@ -46,10 +46,14 @@ export function getTask(taskId) {
   return request(`/tasks/${taskId}`);
 }
 
-export function createTask(description, agent = null, host = null) {
+export function createTask(description, agent = null, host = null, workdir = null, model = null, instructions = null) {
+  const body = { description, agent, host };
+  if (workdir) body.workdir = workdir;
+  if (model) body.model = model;
+  if (instructions) body.instructions = instructions;
   return request('/tasks', {
     method: 'POST',
-    body: JSON.stringify({ description, agent, host }),
+    body: JSON.stringify(body),
   });
 }
 

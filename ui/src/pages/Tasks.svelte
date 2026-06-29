@@ -53,7 +53,7 @@
   {:else}
     <div class="task-list">
       {#each filtered as task}
-        <button class="task-row" onclick={() => navigate('task-detail', { id: task.id })}>
+        <button class="task-row" onclick={() => navigate('task-detail', { id: task.id, from: 'tasks' })}>
           <span class="task-status">{statusIcon(task.status)}</span>
           <span class="task-id">{(task.id || '').slice(0, 8)}</span>
           <span class="task-desc">{(task.description || '').slice(0, 80)}</span>

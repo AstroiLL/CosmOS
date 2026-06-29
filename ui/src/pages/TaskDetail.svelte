@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { getTask } from '../api.js';
 
-  let { taskId, navigate } = $props();
+  let { taskId, from = 'mission-control', navigate } = $props();
 
   let task = $state(null);
   let loading = $state(true);
@@ -27,7 +27,9 @@
 </script>
 
 <div class="page">
-  <button class="btn-ghost back-btn" onclick={() => navigate('tasks')}>← Back to Tasks</button>
+  <button class="btn-ghost back-btn" onclick={() => navigate(from === 'tasks' ? 'tasks' : from === 'memory' ? 'memory' : 'mission-control')}>
+    ← Back to {from === 'tasks' ? 'Tasks' : from === 'memory' ? 'Memory' : 'Mission Control'}
+  </button>
 
   {#if loading}
     <p class="loading">Loading...</p>

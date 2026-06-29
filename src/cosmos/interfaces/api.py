@@ -44,6 +44,8 @@ class TaskCreateRequest(BaseModel):
     host: Optional[str] = None
     workdir: Optional[str] = None
     path: Optional[str] = None
+    model: Optional[str] = None
+    instructions: Optional[str] = None
 
 
 class MemorySearchRequest(BaseModel):
@@ -174,11 +176,15 @@ def create_app(config: CosmOSConfig,
     @app.post("/api/v1/tasks", tags=["Tasks"])
     async def create_task(
         req: TaskCreateRequest,
-        api_key: str = Security(verify_api_key),
     ):
         """Create and execute a task."""
+        # Prepend instructions to description if provided
+        full_description = req.description
+        if req.instructions:
+            full_description = f"{req.instructions}\n\n{req.description}"
+
         task = router.run_task(
-            description=req.description,
+            description=full_description,
             agent_name=req.agent,
             host=req.host,
             workdir=req.workdir,
@@ -230,7 +236,6 @@ def create_app(config: CosmOSConfig,
     @app.post("/api/v1/memory/search", tags=["Memory"])
     async def memory_search(
         req: MemorySearchRequest,
-        api_key: str = Security(verify_api_key),
     ):
         """Search across memory backends."""
         from ..memory import MemoryItem

@@ -2,6 +2,8 @@
   import { marked } from 'marked';
   import { memorySearch } from '../api.js';
 
+  let { navigate = () => {} } = $props();
+
   let query = $state('');
   let results = $state([]);
   let loading = $state(false);
@@ -16,6 +18,20 @@
       console.error('Search failed', e);
     } finally {
       loading = false;
+    }
+  }
+
+  function isTaskKey(key) {
+    return key && key.startsWith('Tasks/');
+  }
+
+  function taskIdFromKey(key) {
+    return key.split('/')[1];
+  }
+
+  function openTask(key) {
+    if (isTaskKey(key)) {
+      navigate('task-detail', { id: taskIdFromKey(key), from: 'memory' });
     }
   }
 </script>
@@ -39,9 +55,12 @@
     <div class="results-count">{results.length} result(s)</div>
     <div class="results">
       {#each results as item}
-        <div class="result-item">
+        <div class="result-item" class:clickable={isTaskKey(item.key)} role="button" tabindex="0" onclick={() => openTask(item.key)} onkeydown={(e) => e.key === 'Enter' && openTask(item.key)}>
           <div class="result-header">
             <span class="result-key">{item.key}</span>
+            {#if isTaskKey(item.key)}
+              <span class="result-goto">→</span>
+            {/if}
             <span class="result-source">[{item.source}]</span>
             {#if item.tags}
               {#each item.tags as tag}
@@ -85,6 +104,11 @@
     border-radius: var(--radius);
     padding: 16px;
   }
+  .result-item.clickable {
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .result-item.clickable:hover { background: var(--bg-raised); border-color: var(--accent); }
   .result-header {
     display: flex;
     align-items: center;
@@ -100,6 +124,10 @@
   .result-source {
     font-size: 11px;
     color: var(--text-dim);
+  }
+  .result-goto {
+    font-size: 12px;
+    color: var(--accent);
   }
   .result-tag {
     font-size: 10px;

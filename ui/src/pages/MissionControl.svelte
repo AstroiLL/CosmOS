@@ -1,6 +1,8 @@
 <script>
   import { onMount } from 'svelte';
 
+  let { navigate = () => {} } = $props();
+
   let agents = $state([]);
   let tasks = $state([]);
   let sysInfo = $state({});
@@ -43,7 +45,7 @@
     <!-- Agent cards (inline, no Card component) -->
     <div class="card-grid">
       {#each agents as agent}
-        <div class="card" class:online={agent.available} class:offline={!agent.available}>
+        <div class="card clickable" class:online={agent.available} class:offline={!agent.available} role="button" tabindex="0" onclick={() => navigate('chat', { agent: agent.name })} onkeydown={(e) => e.key === 'Enter' && navigate('chat', { agent: agent.name })}>
           <div class="card-icon">🤖</div>
           <div class="card-body">
             <div class="card-title">{agent.name}</div>
@@ -76,7 +78,7 @@
       <h2>Recent Tasks</h2>
       <div class="task-list">
         {#each tasks as task}
-          <div class="task-row">
+          <div class="task-row clickable" role="button" tabindex="0" onclick={() => navigate('task-detail', { id: task.id, from: 'mission-control' })} onkeydown={(e) => e.key === 'Enter' && navigate('task-detail', { id: task.id, from: 'mission-control' })}>
             <span class="task-status">{statusIcon(task.status)}</span>
             <span class="task-desc">{(task.description || '').slice(0, 60)}</span>
             <span class="task-agent">{task.agent}</span>
@@ -89,7 +91,10 @@
 </div>
 
 <style>
-  .page { max-width: 960px; }
+  .page { max-width: 960px; padding-bottom: env(safe-area-inset-bottom, 0px); }
+  @media (max-width: 768px) {
+    .page { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 60px); }
+  }
   .page-title {
     font-size: 22px;
     font-weight: 700;
@@ -121,6 +126,9 @@
   .card.online { border-left: 3px solid var(--green); }
   .card.offline { border-left: 3px solid var(--red); }
   .card.neutral { border-left: 3px solid var(--border); }
+  .card.clickable { cursor: pointer; transition: background 0.15s; }
+  .card.clickable:hover { background: var(--bg-raised); }
+  .card.clickable:active { background: var(--bg-hover); }
   .card-icon {
     font-size: 24px;
     width: 40px; height: 40px;
@@ -172,6 +180,8 @@
     font-size: 13px;
   }
   .task-row:last-child { border-bottom: none; }
+  .task-row.clickable { cursor: pointer; transition: background 0.15s; }
+  .task-row.clickable:hover { background: var(--bg-raised); }
   .task-status { font-size: 14px; width: 20px; }
   .task-desc { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .task-agent {

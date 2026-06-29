@@ -36,7 +36,7 @@
 
   <div class="body">
     {#if sidebarOpen}
-      <Sidebar {currentPage} {navigate} />
+      <Sidebar {currentPage} {pageParams} {navigate} />
     {/if}
 
     <main class="main">
@@ -45,13 +45,13 @@
       {:else if currentPage === 'tasks'}
         <Tasks {navigate} />
       {:else if currentPage === 'task-detail'}
-        <TaskDetail taskId={pageParams.id} {navigate} />
+        <TaskDetail taskId={pageParams.id} from={pageParams.from} {navigate} />
       {:else if currentPage === 'chat'}
         <Chat agentName={pageParams.agent} {navigate} />
       {:else if currentPage === 'agents'}
         <Agents {navigate} />
       {:else if currentPage === 'memory'}
-        <Memory />
+        <Memory {navigate} />
       {:else if currentPage === 'settings'}
         <Settings />
       {:else}
@@ -64,6 +64,7 @@
 <style>
   .layout {
     height: 100vh;
+    height: 100dvh;
     display: flex;
     flex-direction: column;
     background: var(--bg);
